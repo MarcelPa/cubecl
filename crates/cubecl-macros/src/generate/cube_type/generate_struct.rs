@@ -118,7 +118,6 @@ impl CubeTypeStruct {
         let name = &self.ident;
         let name_launch = &self.name_launch;
 
-
         let (generics_impl, generics_use, where_clause) = &self.generics.split_for_impl();
         let expanded_generics = self.expanded_generics();
         let (exp_generics_impl, exp_generics_use, exp_where_clause) = expanded_generics.split_for_impl();
