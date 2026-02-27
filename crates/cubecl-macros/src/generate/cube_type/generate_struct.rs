@@ -114,6 +114,38 @@ impl CubeTypeStruct {
         }
     }
 
+    pub fn as_launch_arg(&self) -> proc_macro2::TokenStream {
+        let launch_arg_trait = prelude_type("AsLaunchArgument");
+        let name = &self.ident;
+        let name_launch = &self.name_launch;
+
+        let generics = self.expanded_generics();
+        let (generics_impl, generics_use, where_clause) = generics.split_for_impl();
+
+        let launch_arguments = self
+            .fields
+            .iter()
+            .map(TypeField::split)
+            .map(|(_, ident, ty, _)| {
+                if TypeField::is_scalar(ty) {
+                    quote![ScalarArg::new(self.#ident)]
+                } else {
+                    // hail mary: let's hope a non-scalar implements AsLaunchArgument
+                    quote![self.#ident.as_launch_arg()]
+                }
+            });
+
+        quote! {
+            impl #generics_impl #launch_arg_trait<R, #name_launch<'a, R>> for #name #where_clause {
+                fn as_launch_arg(&self) -> #name_launch<'a, R> {
+                    #name_launch::new(
+                        #(#launch_arguments),*
+                    )
+                }
+            }
+        }
+    }
+
     fn arg_settings_impl(&self) -> proc_macro2::TokenStream {
         let arg_settings = prelude_type("ArgSettings");
         let kernel_launcher = prelude_type("KernelLauncher");
@@ -414,5 +446,21 @@ impl TypeField {
             &self.ty,
             self.comptime.is_present(),
         )
+    }
+
+    pub fn is_scalar(ty: &Type) -> bool {
+        // TODO: is there a way to conveniently get all scalars from this?
+        // use cubecl::ir::{ElemType,FloatKind,IntKind,UIntKind};
+        let scalars: Vec<String> = vec![
+            "f64", "f32", "f16", "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64"
+        ].into_iter().map(str::to_string).collect();
+        match ty {
+            Type::Path(path) => {
+                scalars.contains(
+                    &path.path.segments.first().unwrap().ident.to_string()
+                )
+            },
+            _ => false
+        }
     }
 }

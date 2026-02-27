@@ -1,5 +1,5 @@
 pub use crate::{
-    CubeLaunch, CubeType, RuntimeArg,
+    CubeLaunch, CubeLaunchArg, CubeType, RuntimeArg,
     codegen::{KernelExpansion, KernelIntegrator, KernelSettings},
     comment, comptime, comptime_type,
     compute::{KernelBuilder, KernelLauncher},
