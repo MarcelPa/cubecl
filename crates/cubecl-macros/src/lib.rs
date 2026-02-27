@@ -9,6 +9,7 @@ use parse::{
     cube_impl::CubeImpl,
     cube_trait::{CubeTrait, CubeTraitImpl},
     cube_type::CubeType,
+    cube_type::CubeTypeStruct,
     helpers::{RemoveHelpers, ReplaceIndices},
     kernel::{Launch, from_tokens},
 };
@@ -128,6 +129,23 @@ pub fn module_derive_cube_launch(input: TokenStream) -> TokenStream {
 #[proc_macro_derive(CubeType, attributes(expand, cube))]
 pub fn module_derive_cube_type(input: TokenStream) -> TokenStream {
     gen_cube_type(input, false)
+}
+
+/// Derive macro that enables `as_launch_arg()` of a cube type that is launcher with a kernel
+#[proc_macro_derive(CubeLaunchArg, attributes(expand, cube))]
+pub fn module_derive_cube_launch_arg(input: TokenStream) -> TokenStream {
+    let parsed = syn::parse(input);
+    let input = match &parsed {
+        Ok(val) => val,
+        Err(err) => return err.to_compile_error().into(),
+    };
+
+    let cube_type = match CubeTypeStruct::from_derive_input(input) {
+        Ok(val) => val,
+        Err(err) => return err.write_errors().into(),
+    };
+
+    cube_type.as_launch_arg().into()
 }
 
 fn gen_cube_type(input: TokenStream, with_launch: bool) -> TokenStream {
