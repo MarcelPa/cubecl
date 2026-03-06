@@ -372,3 +372,24 @@ impl<T: CubePrimitive> ListMutExpand<T> for ExpandElementTyped<Array<T>> {
         index_assign::expand(scope, self.clone(), idx, value);
     }
 }
+
+// impl<'a, R: Runtime, T: CubePrimitive + Clone> AsLaunchArgument for Array<'a, T> {
+//     fn as_arg(&self, device: Runtime, line_size: LineSize) -> ArrayArg<'a, R> {
+//         // things that need to happen: allocate space on the GPU via the client
+//         // create a handle via the client
+//         // return the ArrayArg --> done
+//         let client = R::client(device);
+//         // array as slice? &[u8] needed
+//         // usually done via <type>::as_bytes()
+//         let data: Vec<T> = self.into_iter().map(|v| v).collect();
+//         let bytes = T::as_bytes(data.as_slice());
+//         let handle = client.create_from_slice(
+//             bytes
+//         );
+//         ArrayArg::from_raw_parts::<T>(
+//             handle
+//             self.len(),
+//             line_size
+//         )
+//     }
+// }
