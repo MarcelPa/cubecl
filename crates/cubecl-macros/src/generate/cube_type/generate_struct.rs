@@ -1,6 +1,6 @@
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::{Ident, Type, Visibility};
+use syn::{Ident, Type, Visibility, Generics, GenericArgument, GenericParam, TypeParamBound, PathArguments};
 
 use crate::{
     parse::cube_type::{CubeTypeStruct, TypeField},
@@ -119,25 +119,54 @@ impl CubeTypeStruct {
         let name = &self.ident;
         let name_launch = &self.name_launch;
 
-        let generics = self.expanded_generics();
-        let (generics_impl, generics_use, where_clause) = generics.split_for_impl();
+
+        let (generics_impl, generics_use, where_clause) = &self.generics.split_for_impl();
+        let expanded_generics = self.expanded_generics();
+        let (exp_generics_impl, exp_generics_use, exp_where_clause) = expanded_generics.split_for_impl();
 
         let launch_arguments = self
             .fields
             .iter()
             .map(TypeField::split)
             .map(|(_, ident, ty, _)| {
-                if TypeField::is_scalar(ty) {
+                if TypeField::is_scalar(ty, &self.generics) {
                     quote![ScalarArg::new(self.#ident)]
+                // TODO: all of this is superfluous, as as_arg should be implemented by arrays and
+                // tensors themselves
+                // } else if TypeField::is_array(ty, &self.generics) {
+                //     // TODO: array type method would be nice
+                //     //
+                //     match ty {
+                //         Type::Path(path) => {
+                //             match &path.path.segments.first().unwrap().arguments {
+                //                 PathArguments::AngleBracketed(gen_path) => {
+                //                     let array_type = match &gen_path.args.first().unwrap() {
+                //                         GenericArgument::Type(arr_ty) => {
+                //                             match arr_ty {
+                //                                 Type::Path(arr_ty_path) => {
+                //                                     &arr_ty_path.path.segments.first().unwrap().ident
+                //                                 },
+                //                                 _ => panic!("lost count which error this is...")
+                //                             }
+                //                         },
+                //                         _ => panic!("how is the argument on an array not a generic one?")
+                //                     };
+                //                     quote![ArrayArg::from_raw_parts::<#array_type>(&client.create_from_slice(self.#ident.to_slice()), self.#ident.len(), self.#ident.line_size())]
+                //                 },
+                //                 _ => { panic!("how is there no argument on an array?") },
+                //             }
+                //         },
+                //         _ => { panic!("How is this not a path?") },
+                //     }
                 } else {
                     // hail mary: let's hope a non-scalar implements AsLaunchArgument
-                    quote![self.#ident.as_launch_arg()]
+                    quote![self.#ident.as_arg(line_size, client)]
                 }
             });
 
         quote! {
-            impl #generics_impl #launch_arg_trait<R, #name_launch<'a, R>> for #name #where_clause {
-                fn as_launch_arg(&self) -> #name_launch<'a, R> {
+            impl #exp_generics_impl #launch_arg_trait<R, #name_launch #exp_generics_use> for #name #generics_use #exp_where_clause {
+                fn as_arg(&self, line_size: LineSize, client: &ComputeClient<R>) -> #name_launch #exp_generics_use {
                     #name_launch::new(
                         #(#launch_arguments),*
                     )
@@ -448,15 +477,94 @@ impl TypeField {
         )
     }
 
-    pub fn is_scalar(ty: &Type) -> bool {
-        // TODO: is there a way to conveniently get all scalars from this?
-        // use cubecl::ir::{ElemType,FloatKind,IntKind,UIntKind};
-        let scalars: Vec<String> = vec![
-            "f64", "f32", "f16", "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64"
+    pub fn is_scalar(ty: &Type, generics: &Generics) -> bool {
+        // TODO: is there a way to conveniently get all Rust-primitive scalars?
+        // The following is taken from implementations of CubePrimitive:
+        // https://docs.rs/cubecl/latest/cubecl/frontend/trait.CubePrimitive.html
+        let mut scalars: Vec<String> = vec![
+            "bool",
+            "f32",
+            "f64",
+            "i8",
+            "i16",
+            "i32",
+            "i64",
+            "isize",
+            "u8",
+            "u16",
+            "u32",
+            "u64",
+            "usize",
+            "bf16",
+            "f16",
+            "e2m1",
+            "e2m1x2",
+            "e2m3",
+            "e3m2",
+            "e4m3",
+            "e5m2",
+            "flex32",
+            "tf32",
+            "ue8m0",
         ].into_iter().map(str::to_string).collect();
+        // check generics and add any generic identifier
+        for param in &generics.params {
+            match param {
+                GenericParam::Type(ty) => {
+                    for bound in &ty.bounds {
+                        match bound {
+                            TypeParamBound::Trait(trai) => {
+                                let trait_type = trai.path.segments.last().unwrap().ident.to_string();
+                                if vec!["CubeScalar".to_string(), "ScalarArgSettings".to_string()].contains(&trait_type) {
+                                    scalars.push(ty.ident.to_string());
+                                }
+                            },
+                            _ => {},
+                        }
+                    }
+                },
+                _ => {},
+            }
+        }
         match ty {
             Type::Path(path) => {
                 scalars.contains(
+                    // TODO: I can compare idents, but this may include the span
+                    &path.path.segments.first().unwrap().ident.to_string()
+                )
+            },
+            _ => false
+        }
+    }
+
+    pub fn is_array(ty: &Type, generics: &Generics) -> bool {
+        // TODO: I may extend this?
+        let mut arrays: Vec<String> = vec![
+            "Array",
+        ].into_iter().map(str::to_string).collect();
+        // check generics and add any generic identifier
+        for param in &generics.params {
+            match param {
+                GenericParam::Type(ty) => {
+                    for bound in &ty.bounds {
+                        match bound {
+                            TypeParamBound::Trait(trai) => {
+                                let trait_type = trai.path.segments.last().unwrap().ident.to_string();
+                                if arrays.contains(&trait_type) {
+                                    arrays.push(ty.ident.to_string());
+                                }
+                            },
+                            _ => {},
+                        }
+                    }
+                },
+                _ => {},
+            }
+        }
+        match ty {
+            Type::Path(path) => {
+                arrays.contains(
+                    // TODO: I can compare idents, but this may include the span
                     &path.path.segments.first().unwrap().ident.to_string()
                 )
             },
