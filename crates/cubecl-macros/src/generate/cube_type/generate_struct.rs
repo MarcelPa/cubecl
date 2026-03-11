@@ -1,6 +1,6 @@
 use proc_macro2::TokenStream;
 use quote::{quote, format_ident};
-use syn::{Ident, Type, Visibility, Generics, GenericParam, TypeParamBound};
+use syn::{Ident, Type, Visibility, Generics, GenericArgument, GenericParam, TypeParamBound, PathArguments};
 
 use crate::{
     generate::bounded_where_clause,
@@ -178,13 +178,12 @@ impl CubeTypeStruct {
             .iter()
             .map(TypeField::split)
             .map(|(vis, ident, ty, _)| {
-                if TypeField::is_scalar(&ty, &expanded_generics) {
-                    quote!( #vis #ident: #ty )
-                } else if TypeField::is_array(&ty, &expanded_generics) {
-                    // TODO split type into array & type
-                    quote!( #vis #ident: [#ty])
+                if TypeField::is_array(&ty, &expanded_generics) {
+                    let array_ty = TypeField::get_array_type(&ty, &expanded_generics).unwrap();
+                    quote!( #vis #ident: Vec<#array_ty>)
                 } else {
-                    quote!()
+                    // Any "non-mapped" type should be used verbatim
+                    quote!( #vis #ident: #ty )
                 }
             });
 
@@ -202,19 +201,19 @@ impl CubeTypeStruct {
 
         quote! {
             pub struct #name_basic #simple_generics_impl #simple_where_clause {
-
+                #( #basic_fields ),*
             }
 
-            // impl #generics_impl #as_handle_trait<'a, R> for #name #simple_generics_use #where_clause {
-            //     type Handle = #name_handle #generics_use;
-            //     fn as_handle(&self, client: &ComputeClient<R>) -> Self::Handle {
-            //         Self::Handle {
-            //             _phantom_a: std::marker::PhantomData,
-            //             _phantom_runtime: std::marker::PhantomData,
-            //             #( #as_handle_fields ),*
-            //         }
-            //     }
-            // }
+            impl #generics_impl #as_handle_trait<'a, R> for #name_basic #simple_generics_use #where_clause {
+                type Handle = #name_handle #generics_use;
+                fn as_handle(&self, client: &ComputeClient<R>) -> Self::Handle {
+                    Self::Handle {
+                        _phantom_a: std::marker::PhantomData,
+                        _phantom_runtime: std::marker::PhantomData,
+                        #( #as_handle_fields ),*
+                    }
+                }
+            }
         }
     }
 
@@ -588,12 +587,39 @@ impl TypeField {
     }
 
     pub fn is_array(ty: &Type, generics: &Generics) -> bool {
-        println!("{:?}", ty);
+        match Self::get_array_type(ty, generics) {
+            Some(_) => true,
+            None => false,
+        }
+    }
+
+    pub fn get_array_type(ty: &Type, _generics: &Generics) -> Option<Ident> {
+        // TODO: add check in generics for Arrays
         match ty {
             Type::Path(path) => {
-                path.path.segments.first().unwrap().ident.to_string() == "Array"
-            }
-            _ => false
+                let last_segment = path.path.segments.last().unwrap();
+                if last_segment.ident.to_string() == "Array" {
+                    match &last_segment.arguments {
+                        PathArguments::AngleBracketed(args) => {
+                            match args.args.first().unwrap() {
+                                GenericArgument::Type(generic_type) => {
+                                    match generic_type {
+                                        Type::Path(generic_path) => {
+                                            Some(generic_path.path.segments.first().unwrap().ident.clone())
+                                        }
+                                        _ => None,
+                                    }
+                                }
+                                _ => None,
+                            }
+                        },
+                        _ => None,
+                    }
+                } else {
+                    None
+                }
+            },
+            _ => None,
         }
     }
 }
