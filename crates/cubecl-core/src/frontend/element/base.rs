@@ -148,15 +148,20 @@ pub trait LaunchArg: CubeType + Send + Sync + 'static {
 }
 
 /// Defines that a struct annotated with `#[derive(CubeLaunch)]` can be transformed into its Launch Argument
-/// equivalent.
-pub trait AsLaunchArgument<R: Runtime, A: ArgSettings<R>> {
-    // TODO: check whether I need to specify a lifetime here as well
-    // This would make sense given that an argument handle needs to live as long as the object in
-    // the struct does.
-    // TODO: check as_arg from TensorHandle
-    // needed: line_size
-    // needed: runtime or client
-    fn as_arg(&self, line_size: LineSize, client: &ComputeClient<R>) -> A;
+/// equivalent. This can be automatically implemented using the `#[derive(CubeLaunchArg)` macro.
+pub trait AsLaunchArgument<'a, R: Runtime> {
+    type Argument: ArgSettings<R>;
+    fn as_arg(&'a self, line_size: LineSize) -> Self::Argument;
+}
+
+/// Defines that a struct is able to be transformed into a handle, such as ArrayHandle for Arrays.
+/// The `as_handle()` function is supposed to take care of allocating memory via the ComputeClient
+/// and return either a handle or a struct that holds all handles. Together with the
+/// AsLaunchArgument, this transforms `#[derive(CubeLaunch)]` annotated structs to launch
+/// arguments.
+pub trait AsHandle<'a, R: Runtime> {
+    type Handle: AsLaunchArgument<'a, R>;
+    fn as_handle(&self, client: &ComputeClient<R>) -> Self::Handle;
 }
 
 /// Defines the argument settings used to launch a kernel.
