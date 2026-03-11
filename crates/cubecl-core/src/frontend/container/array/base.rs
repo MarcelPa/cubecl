@@ -421,11 +421,11 @@ impl<'a, R: Runtime, T: CubePrimitive> AsHandle<'a, R> for Array<T> {
     }
 }
 
-impl<'a, R: Runtime, T: CubePrimitive + CubeElement> AsHandle<'a, R> for [T] {
+impl<'a, R: Runtime, T: CubePrimitive + CubeElement> AsHandle<'a, R> for Vec<T> {
     type Handle = ArrayHandle<T, R>;
 
     fn as_handle(&self, client: &ComputeClient<R>) -> Self::Handle {
-        let bytes = T::as_bytes(self); 
+        let bytes = T::as_bytes(self.as_slice()); 
         ArrayHandle::<T, R> {
             handle: client.create_from_slice(bytes),
             len: self.len(),
