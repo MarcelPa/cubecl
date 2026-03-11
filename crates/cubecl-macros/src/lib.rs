@@ -139,7 +139,7 @@ pub fn module_derive_cube_type(input: TokenStream) -> TokenStream {
     gen_cube_type(input, false)
 }
 
-/// Derive macro that enables `as_launch_arg()` of a cube type that is launcher with a kernel
+/// Derive macro that enables `as_arg()` of a struct that implement AsLaunchArgument
 #[proc_macro_derive(CubeLaunchArg, attributes(expand, cube))]
 pub fn module_derive_cube_launch_arg(input: TokenStream) -> TokenStream {
     let parsed = syn::parse(input);
@@ -154,6 +154,24 @@ pub fn module_derive_cube_launch_arg(input: TokenStream) -> TokenStream {
     };
 
     cube_type.as_launch_arg().into()
+}
+
+/// Derive macro that builds a new struct using only Rust basic types which can be transformed into
+/// a handle
+#[proc_macro_derive(CubeAsHandle)]
+pub fn module_derive_as_handle(input: TokenStream) -> TokenStream {
+    let parsed = syn::parse(input);
+    let input = match &parsed {
+        Ok(val) => val,
+        Err(err) => return err.to_compile_error().into(),
+    };
+
+    let cube_type = match CubeTypeStruct::from_derive_input(input) {
+        Ok(val) => val,
+        Err(err) => return err.write_errors().into(),
+    };
+
+    cube_type.implement_as_handle().into()
 }
 
 fn gen_cube_type(input: TokenStream, with_launch: bool) -> TokenStream {

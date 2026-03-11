@@ -1,6 +1,6 @@
 use proc_macro2::TokenStream;
-use quote::quote;
-use syn::{Ident, Type, Visibility, WhereClause, Generics, GenericArgument, GenericParam, TypeParamBound, PathArguments};
+use quote::{quote, format_ident};
+use syn::{Ident, Type, Visibility, Generics, GenericParam, TypeParamBound};
 
 use crate::{
     generate::bounded_where_clause,
@@ -117,59 +117,104 @@ impl CubeTypeStruct {
         let launch_arg_trait = prelude_type("AsLaunchArgument");
         let name = &self.ident;
         let name_launch = &self.name_launch;
-
-        let (generics_impl, generics_use, where_clause) = &self.generics.split_for_impl();
+        let name_handle = format_ident!("{name}Handle");
         let expanded_generics = self.expanded_generics();
-        let (exp_generics_impl, exp_generics_use, exp_where_clause) = expanded_generics.split_for_impl();
-
-        let launch_arguments = self
+        let (generics_impl, generics_use, where_clause) = expanded_generics.split_for_impl();
+        let handle_fields = self
             .fields
             .iter()
             .map(TypeField::split)
             .map(|(_, ident, ty, _)| {
                 if TypeField::is_scalar(ty, &self.generics) {
-                    quote![ScalarArg::new(self.#ident)]
-                // TODO: all of this is superfluous, as as_arg should be implemented by arrays and
-                // tensors themselves
-                // } else if TypeField::is_array(ty, &self.generics) {
-                //     // TODO: array type method would be nice
-                //     //
-                //     match ty {
-                //         Type::Path(path) => {
-                //             match &path.path.segments.first().unwrap().arguments {
-                //                 PathArguments::AngleBracketed(gen_path) => {
-                //                     let array_type = match &gen_path.args.first().unwrap() {
-                //                         GenericArgument::Type(arr_ty) => {
-                //                             match arr_ty {
-                //                                 Type::Path(arr_ty_path) => {
-                //                                     &arr_ty_path.path.segments.first().unwrap().ident
-                //                                 },
-                //                                 _ => panic!("lost count which error this is...")
-                //                             }
-                //                         },
-                //                         _ => panic!("how is the argument on an array not a generic one?")
-                //                     };
-                //                     quote![ArrayArg::from_raw_parts::<#array_type>(&client.create_from_slice(self.#ident.to_slice()), self.#ident.len(), self.#ident.line_size())]
-                //                 },
-                //                 _ => { panic!("how is there no argument on an array?") },
-                //             }
-                //         },
-                //         _ => { panic!("How is this not a path?") },
-                //     }
+                    quote!(#ident: #ty)
                 } else {
-                    // hail mary: let's hope a non-scalar implements AsLaunchArgument
-                    quote![self.#ident.as_arg(line_size, client)]
+                    quote!(#ident: <#ty as cubecl::frontend::AsHandle<'a, R>>::Handle)
+                }
+            });
+
+        let impl_fields = self
+            .fields
+            .iter()
+            .map(TypeField::split)
+            .map(|(_, ident, ty, _)| {
+                if TypeField::is_scalar(ty, &self.generics) {
+                    quote!(#ident: <#ty as cubecl::frontend::AsLaunchArgument<'a, R>>::as_arg(&self.#ident, line_size))
+                } else {
+                    quote!(#ident: self.#ident.as_arg(line_size))
                 }
             });
 
         quote! {
-            impl #exp_generics_impl #launch_arg_trait<R, #name_launch #exp_generics_use> for #name #generics_use #exp_where_clause {
-                fn as_arg(&self, line_size: LineSize, client: &ComputeClient<R>) -> #name_launch #exp_generics_use {
-                    #name_launch::new(
-                        #(#launch_arguments),*
-                    )
+            pub struct #name_handle #generics_impl #where_clause {
+                _phantom_a: std::marker::PhantomData<&'a ()>,
+                _phantom_runtime: std::marker::PhantomData<R>,
+                #( #handle_fields ),*
+            }
+
+            impl #generics_impl #launch_arg_trait<'a, R> for #name_handle #generics_use {
+                type Argument = #name_launch #generics_use;
+                fn as_arg(&'a self, line_size: cubecl::prelude::LineSize) -> Self::Argument {
+                    #name_launch {
+                        _phantom_a: std::marker::PhantomData,
+                        _phantom_runtime: std::marker::PhantomData,
+                        #( #impl_fields ),*
+                    }
                 }
             }
+        }
+    }
+
+    pub fn implement_as_handle(&self) -> proc_macro2::TokenStream {
+        let as_handle_trait = prelude_type("AsHandle");
+        let name = &self.ident;
+        let name_basic = format_ident!("{name}Basic");
+        let name_handle = format_ident!("{name}Handle");
+        let (simple_generics_impl, simple_generics_use, simple_where_clause) = self.generics.split_for_impl();
+        let expanded_generics = self.expanded_generics();
+        let (generics_impl, generics_use, where_clause) = expanded_generics.split_for_impl();
+
+        let basic_fields = self
+            .fields
+            .iter()
+            .map(TypeField::split)
+            .map(|(vis, ident, ty, _)| {
+                if TypeField::is_scalar(&ty, &expanded_generics) {
+                    quote!( #vis #ident: #ty )
+                } else if TypeField::is_array(&ty, &expanded_generics) {
+                    // TODO split type into array & type
+                    quote!( #vis #ident: [#ty])
+                } else {
+                    quote!()
+                }
+            });
+
+        let as_handle_fields = self
+            .fields
+            .iter()
+            .map(TypeField::split)
+            .map(|(_, ident, ty, _)| {
+                if TypeField::is_scalar(&ty, &expanded_generics) {
+                    quote!( #ident: self.#ident )
+                } else {
+                    quote!( #ident: self.#ident.as_handle(client) )
+                }
+            });
+
+        quote! {
+            pub struct #name_basic #simple_generics_impl #simple_where_clause {
+
+            }
+
+            // impl #generics_impl #as_handle_trait<'a, R> for #name #simple_generics_use #where_clause {
+            //     type Handle = #name_handle #generics_use;
+            //     fn as_handle(&self, client: &ComputeClient<R>) -> Self::Handle {
+            //         Self::Handle {
+            //             _phantom_a: std::marker::PhantomData,
+            //             _phantom_runtime: std::marker::PhantomData,
+            //             #( #as_handle_fields ),*
+            //         }
+            //     }
+            // }
         }
     }
 
@@ -395,7 +440,7 @@ impl CubeTypeStruct {
                 }
             });
 
-        quote! {
+    quote! {
             impl #generics #into_mut for #name_expand #generic_names #where_clause {
                 fn into_mut(self, scope: &mut #scope) -> Self {
                     Self {
@@ -535,7 +580,6 @@ impl TypeField {
         match ty {
             Type::Path(path) => {
                 scalars.contains(
-                    // TODO: I can compare idents, but this may include the span
                     &path.path.segments.first().unwrap().ident.to_string()
                 )
             },
@@ -544,36 +588,11 @@ impl TypeField {
     }
 
     pub fn is_array(ty: &Type, generics: &Generics) -> bool {
-        // TODO: I may extend this?
-        let mut arrays: Vec<String> = vec![
-            "Array",
-        ].into_iter().map(str::to_string).collect();
-        // check generics and add any generic identifier
-        for param in &generics.params {
-            match param {
-                GenericParam::Type(ty) => {
-                    for bound in &ty.bounds {
-                        match bound {
-                            TypeParamBound::Trait(trai) => {
-                                let trait_type = trai.path.segments.last().unwrap().ident.to_string();
-                                if arrays.contains(&trait_type) {
-                                    arrays.push(ty.ident.to_string());
-                                }
-                            },
-                            _ => {},
-                        }
-                    }
-                },
-                _ => {},
-            }
-        }
+        println!("{:?}", ty);
         match ty {
             Type::Path(path) => {
-                arrays.contains(
-                    // TODO: I can compare idents, but this may include the span
-                    &path.path.segments.first().unwrap().ident.to_string()
-                )
-            },
+                path.path.segments.first().unwrap().ident.to_string() == "Array"
+            }
             _ => false
         }
     }

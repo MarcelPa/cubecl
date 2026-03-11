@@ -2,10 +2,17 @@ use cubecl_ir::{ConstantValue, ExpandElement};
 use cubecl_runtime::runtime::Runtime;
 use num_traits::{NumCast, One, Zero};
 
-use crate::compute::KernelLauncher;
-use crate::{IntoRuntime, ScalarArgType, compute::KernelBuilder};
+use crate::ir::{LineSize, Scope, Variable};
+use crate::{CubeScalar, compute::KernelBuilder};
+use crate::{compute::KernelLauncher, prelude::CompilationArg};
 use crate::{
-    frontend::{Abs, Remainder},
+    frontend::{
+        Abs,
+        Remainder,
+        element::{
+            AsLaunchArgument,
+        },
+    },
     unexpanded,
 };
 use crate::{
@@ -120,8 +127,58 @@ impl ScalarArgSettings for usize {
 
 impl ScalarArgSettings for isize {
     fn register<R: Runtime>(&self, launcher: &mut KernelLauncher<R>) {
-        let value = InputScalar::new(*self, launcher.settings.address_type.signed_type());
-        InputScalar::register(value, launcher);
+        InputScalar::new(*self, launcher.settings.address_type.signed_type()).register(launcher);
+    }
+}
+
+impl<'a, R: Runtime, E: CubeScalar> AsLaunchArgument<'a, R> for E {
+    type Argument = ScalarArg<E>;
+    fn as_arg(&'a self, _line_size: LineSize) -> Self::Argument {
+        ScalarArg::new(*self)
+    }
+}
+
+impl<'a, R: Runtime> AsLaunchArgument<'a, R> for usize {
+    type Argument = ScalarArg<usize>;
+    fn as_arg(&'a self, _line_size: LineSize) -> Self::Argument {
+        ScalarArg::new(*self)
+    }
+}
+
+impl<'a, R: Runtime> AsLaunchArgument<'a, R> for isize {
+    type Argument = ScalarArg<isize>;
+    fn as_arg(&'a self, _line_size: LineSize) -> Self::Argument {
+        ScalarArg::new(*self)
+    }
+}
+
+#[derive(new, Clone, Copy)]
+pub struct ScalarArg<T: ScalarArgSettings> {
+    pub elem: T,
+}
+
+#[derive(new, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ScalarCompilationArg<T: ScalarArgSettings> {
+    _ty: PhantomData<T>,
+}
+
+impl<T: ScalarArgSettings> Eq for ScalarCompilationArg<T> {}
+impl<T: ScalarArgSettings> core::hash::Hash for ScalarCompilationArg<T> {
+    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
+        self._ty.hash(state);
+    }
+}
+impl<T: ScalarArgSettings> core::fmt::Debug for ScalarCompilationArg<T> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str("Scalar")
+    }
+}
+
+impl<T: ScalarArgSettings> CompilationArg for ScalarCompilationArg<T> {}
+
+impl<T: ScalarArgSettings, R: Runtime> ArgSettings<R> for ScalarArg<T> {
+    fn register(&self, launcher: &mut KernelLauncher<R>) {
+        self.elem.register(launcher);
     }
 }
 

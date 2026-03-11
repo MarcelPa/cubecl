@@ -10,11 +10,27 @@ use crate::frontend::{CubePrimitive, ExpandElementTyped};
 use crate::prelude::*;
 use crate::{self as cubecl};
 use crate::{
-    frontend::CubeType,
+    Runtime,
+    frontend::{
+        CubeType,
+        container::array::ArrayArg,
+        element::{
+            AsHandle,
+            AsLaunchArgument,
+        },
+    },
     ir::{Metadata, Type},
     unexpanded,
 };
+use crate::{
+    frontend::{CubePrimitive, ExpandElementIntoMut, ExpandElementTyped},
+    prelude::{CubeElement,Lined},
+};
 use cubecl_macros::{cube, intrinsic};
+use cubecl_runtime::{
+    client::ComputeClient,
+    server::Handle,
+};
 
 /// A contiguous array of elements.
 pub struct Array<E> {
@@ -342,23 +358,52 @@ impl<T: CubePrimitive> ListMutExpand<T> for ExpandElementTyped<Array<T>> {
     }
 }
 
-// impl<'a, R: Runtime, T: CubePrimitive + Clone> AsLaunchArgument for Array<'a, T> {
-//     fn as_arg(&self, device: Runtime, line_size: LineSize) -> ArrayArg<'a, R> {
-//         // things that need to happen: allocate space on the GPU via the client
-//         // create a handle via the client
-//         // return the ArrayArg --> done
-//         let client = R::client(device);
-//         // array as slice? &[u8] needed
-//         // usually done via <type>::as_bytes()
-//         let data: Vec<T> = self.into_iter().map(|v| v).collect();
-//         let bytes = T::as_bytes(data.as_slice());
-//         let handle = client.create_from_slice(
-//             bytes
-//         );
-//         ArrayArg::from_raw_parts::<T>(
-//             handle
-//             self.len(),
-//             line_size
-//         )
-//     }
-// }
+pub struct ArrayHandle<T, R>
+where
+    T: CubePrimitive,
+    R: Runtime,
+{
+    pub handle: Handle,
+    pub len: usize,
+    data_type: PhantomData<T>,
+    runtime: PhantomData<R>,
+}
+
+impl<'a, R: Runtime, T: CubePrimitive> AsLaunchArgument<'a, R> for ArrayHandle<T, R> {
+    type Argument = ArrayArg<'a, R>;
+
+    fn as_arg(&'a self, line_size: LineSize) -> Self::Argument {
+        unsafe {
+            ArrayArg::from_raw_parts::<T>(
+                &self.handle,
+                self.len,
+                line_size,
+            )
+        }
+    }
+}
+
+impl<'a, R: Runtime, T: CubePrimitive> AsHandle<'a, R> for Array<T> {
+    type Handle = ArrayHandle<T, R>;
+
+    fn as_handle(&self, _: &ComputeClient<R>) -> Self::Handle {
+        // TODO: I guess this is not very informative. Add information or direct to somehwere else.
+        // The issue here is that having the information about which Handle is associated with an
+        // Array is needed, but the as_handle function does not make sense.
+        panic!("Arrays cannot be transformed into handles. Use a Rust-native array [T] to create a new handle.");
+    }
+}
+
+impl<'a, R: Runtime, T: CubePrimitive + CubeElement> AsHandle<'a, R> for [T] {
+    type Handle = ArrayHandle<T, R>;
+
+    fn as_handle(&self, client: &ComputeClient<R>) -> Self::Handle {
+        let bytes = T::as_bytes(self); 
+        ArrayHandle::<T, R> {
+            handle: client.create_from_slice(bytes),
+            len: self.len(),
+            data_type: PhantomData,
+            runtime: PhantomData,
+        }
+    }
+}
