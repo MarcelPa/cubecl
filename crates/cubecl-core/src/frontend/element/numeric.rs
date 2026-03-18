@@ -130,23 +130,23 @@ impl ScalarArgSettings for isize {
     }
 }
 
-impl<'a, R: Runtime, E: CubeScalar> AsLaunchArgument<'a, R> for E {
-    type Argument = ScalarArg<E>;
-    fn as_arg(&'a self, _line_size: LineSize) -> Self::Argument {
+impl<R: Runtime, E: CubeScalar> AsLaunchArgument<R> for E {
+    type Argument = E;
+    fn as_arg(&self, _line_size: LineSize) -> ScalarArg<E> {
         ScalarArg::new(*self)
     }
 }
 
-impl<'a, R: Runtime> AsLaunchArgument<'a, R> for usize {
-    type Argument = ScalarArg<usize>;
-    fn as_arg(&'a self, _line_size: LineSize) -> Self::Argument {
+impl<R: Runtime> AsLaunchArgument<R> for usize {
+    type Argument = usize;
+    fn as_arg(&self, _line_size: LineSize) -> ScalarArg<usize> {
         ScalarArg::new(*self)
     }
 }
 
-impl<'a, R: Runtime> AsLaunchArgument<'a, R> for isize {
-    type Argument = ScalarArg<isize>;
-    fn as_arg(&'a self, _line_size: LineSize) -> Self::Argument {
+impl<R: Runtime> AsLaunchArgument<R> for isize {
+    type Argument = isize;
+    fn as_arg(&self, _line_size: LineSize) -> ScalarArg<isize> {
         ScalarArg::new(*self)
     }
 }

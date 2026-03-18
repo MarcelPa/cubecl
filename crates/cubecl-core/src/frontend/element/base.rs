@@ -149,9 +149,9 @@ pub trait LaunchArg: CubeType + Send + Sync + 'static {
 
 /// Defines that a struct annotated with `#[derive(CubeLaunch)]` can be transformed into its Launch Argument
 /// equivalent. This can be automatically implemented using the `#[derive(CubeLaunchArg)` macro.
-pub trait AsLaunchArgument<'a, R: Runtime> {
-    type Argument: ArgSettings<R>;
-    fn as_arg(&'a self, line_size: LineSize) -> Self::Argument;
+pub trait AsLaunchArgument<R: Runtime> {
+    type Argument: LaunchArg;
+    fn as_arg<'a>(&'a self, line_size: LineSize) -> <Self::Argument as LaunchArg>::RuntimeArg<'a, R>;
 }
 
 /// Defines that a struct is able to be transformed into a handle, such as ArrayHandle for Arrays.
@@ -159,8 +159,8 @@ pub trait AsLaunchArgument<'a, R: Runtime> {
 /// and return either a handle or a struct that holds all handles. Together with the
 /// AsLaunchArgument, this transforms `#[derive(CubeLaunch)]` annotated structs to launch
 /// arguments.
-pub trait AsHandle<'a, R: Runtime> {
-    type Handle: AsLaunchArgument<'a, R>;
+pub trait AsHandle<R: Runtime> {
+    type Handle: AsLaunchArgument<R>;
     fn as_handle(&self, client: &ComputeClient<R>) -> Self::Handle;
 }
 
