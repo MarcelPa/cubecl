@@ -1,6 +1,6 @@
 use proc_macro2::TokenStream;
 use quote::{quote, format_ident};
-use syn::{Ident, Type, Visibility, Generics, GenericArgument, GenericParam, TypeParamBound, PathArguments};
+use syn::{parse_quote, Ident, Type, Visibility, Generics, GenericArgument, GenericParam, TypeParamBound, PathArguments};
 
 use crate::{
     generate::bounded_where_clause,
@@ -118,8 +118,11 @@ impl CubeTypeStruct {
         let name = &self.ident;
         let name_launch = &self.name_launch;
         let name_handle = format_ident!("{name}Handle");
-        let expanded_generics = self.expanded_generics();
+        let mut expanded_generics = self.generics.clone();
+        let runtime = prelude_type("Runtime");
+        expanded_generics.params.push(parse_quote![R: #runtime]);
         let (generics_impl, generics_use, where_clause) = expanded_generics.split_for_impl();
+        let (_, simple_generics_use, _) = self.generics.split_for_impl();
         let handle_fields = self
             .fields
             .iter()
@@ -128,7 +131,7 @@ impl CubeTypeStruct {
                 if TypeField::is_scalar(ty, &self.generics) {
                     quote!(#ident: #ty)
                 } else {
-                    quote!(#ident: <#ty as cubecl::frontend::AsHandle<'a, R>>::Handle)
+                    quote!(#ident: <#ty as cubecl::frontend::AsHandle<R>>::Handle)
                 }
             });
 
@@ -138,7 +141,7 @@ impl CubeTypeStruct {
             .map(TypeField::split)
             .map(|(_, ident, ty, _)| {
                 if TypeField::is_scalar(ty, &self.generics) {
-                    quote!(#ident: <#ty as cubecl::frontend::AsLaunchArgument<'a, R>>::as_arg(&self.#ident, line_size))
+                    quote!(#ident: <#ty as cubecl::frontend::AsLaunchArgument<R>>::as_arg(&self.#ident, line_size))
                 } else {
                     quote!(#ident: self.#ident.as_arg(line_size))
                 }
@@ -146,14 +149,13 @@ impl CubeTypeStruct {
 
         quote! {
             pub struct #name_handle #generics_impl #where_clause {
-                _phantom_a: std::marker::PhantomData<&'a ()>,
                 _phantom_runtime: std::marker::PhantomData<R>,
                 #( #handle_fields ),*
             }
 
-            impl #generics_impl #launch_arg_trait<'a, R> for #name_handle #generics_use {
-                type Argument = #name_launch #generics_use;
-                fn as_arg(&'a self, line_size: cubecl::prelude::LineSize) -> Self::Argument {
+            impl #generics_impl #launch_arg_trait<R> for #name_handle #generics_use {
+                type Argument = #name #simple_generics_use;
+                fn as_arg<'a>(&'a self, line_size: cubecl::prelude::LineSize) -> #name_launch #generics_use {
                     #name_launch {
                         _phantom_a: std::marker::PhantomData,
                         _phantom_runtime: std::marker::PhantomData,
@@ -170,7 +172,9 @@ impl CubeTypeStruct {
         let name_basic = format_ident!("{name}Basic");
         let name_handle = format_ident!("{name}Handle");
         let (simple_generics_impl, simple_generics_use, simple_where_clause) = self.generics.split_for_impl();
-        let expanded_generics = self.expanded_generics();
+        let mut expanded_generics = self.generics.clone();
+        let runtime = prelude_type("Runtime");
+        expanded_generics.params.push(parse_quote![R: #runtime]);
         let (generics_impl, generics_use, where_clause) = expanded_generics.split_for_impl();
 
         let basic_fields = self
@@ -204,11 +208,10 @@ impl CubeTypeStruct {
                 #( #basic_fields ),*
             }
 
-            impl #generics_impl #as_handle_trait<'a, R> for #name_basic #simple_generics_use #where_clause {
+            impl #generics_impl #as_handle_trait<R> for #name_basic #simple_generics_use #where_clause {
                 type Handle = #name_handle #generics_use;
                 fn as_handle(&self, client: &ComputeClient<R>) -> Self::Handle {
                     Self::Handle {
-                        _phantom_a: std::marker::PhantomData,
                         _phantom_runtime: std::marker::PhantomData,
                         #( #as_handle_fields ),*
                     }

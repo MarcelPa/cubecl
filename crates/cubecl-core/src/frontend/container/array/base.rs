@@ -369,10 +369,10 @@ where
     runtime: PhantomData<R>,
 }
 
-impl<'a, R: Runtime, T: CubePrimitive> AsLaunchArgument<'a, R> for ArrayHandle<T, R> {
-    type Argument = ArrayArg<'a, R>;
+impl<R: Runtime, T: CubePrimitive> AsLaunchArgument<R> for ArrayHandle<T, R> {
+    type Argument = Array<T>;
 
-    fn as_arg(&'a self, line_size: LineSize) -> Self::Argument {
+    fn as_arg<'a>(&'a self, line_size: LineSize) -> ArrayArg<'a, R> {
         unsafe {
             ArrayArg::from_raw_parts::<T>(
                 &self.handle,
@@ -383,7 +383,7 @@ impl<'a, R: Runtime, T: CubePrimitive> AsLaunchArgument<'a, R> for ArrayHandle<T
     }
 }
 
-impl<'a, R: Runtime, T: CubePrimitive> AsHandle<'a, R> for Array<T> {
+impl<R: Runtime, T: CubePrimitive> AsHandle<R> for Array<T> {
     type Handle = ArrayHandle<T, R>;
 
     fn as_handle(&self, _: &ComputeClient<R>) -> Self::Handle {
@@ -394,7 +394,7 @@ impl<'a, R: Runtime, T: CubePrimitive> AsHandle<'a, R> for Array<T> {
     }
 }
 
-impl<'a, R: Runtime, T: CubePrimitive + CubeElement> AsHandle<'a, R> for Vec<T> {
+impl<R: Runtime, T: CubePrimitive + CubeElement> AsHandle<R> for Vec<T> {
     type Handle = ArrayHandle<T, R>;
 
     fn as_handle(&self, client: &ComputeClient<R>) -> Self::Handle {
