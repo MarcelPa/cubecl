@@ -250,6 +250,18 @@ macro_rules! launch_tuple {
 
 all_tuples!(launch_tuple, 2, 12, T, t);
 
+/// Defines that a struct annotated with `#[derive(CubeLaunch)]` can be transformed into its Launch Argument
+/// equivalent.
+pub trait AsLaunchArgument<R: Runtime, A: ArgSettings<R>> {
+    fn as_launch_arg(&self) -> A;
+}
+
+/// Defines the argument settings used to launch a kernel.
+pub trait ArgSettings<R: Runtime>: Send + Sync {
+    /// Register the information of an argument to the [`KernelLauncher`].
+    fn register(&self, launcher: &mut KernelLauncher<R>);
+}
+
 /// Expand type associated with a type.
 #[derive(new)]
 pub struct ExpandElementTyped<T: CubeType> {
