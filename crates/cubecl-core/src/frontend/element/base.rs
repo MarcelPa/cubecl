@@ -7,8 +7,12 @@ use crate::{
 use alloc::{boxed::Box, vec::Vec};
 use core::marker::PhantomData;
 use cubecl_common::{e2m1, e2m1x2, e2m3, e3m2, e4m3, e5m2, flex32, tf32, ue8m0};
-use cubecl_ir::{ExpandElement, VectorSize};
-use cubecl_runtime::runtime::Runtime;
+use cubecl_ir::{ExpandElement, VectorSize, LineSize};
+use cubecl_ir::{ExpandElement, LineSize};
+use cubecl_runtime::{
+    runtime::Runtime,
+    client::ComputeClient,
+};
 use half::{bf16, f16};
 use variadics_please::{all_tuples, all_tuples_enumerated};
 
@@ -217,6 +221,24 @@ pub trait LaunchArg: CubeType + Send + Sync + 'static {
     }
 }
 
+/// Defines that a struct annotated with `#[derive(CubeLaunch)]` can be transformed into its Launch Argument
+/// equivalent.
+pub trait AsLaunchArgument<R: Runtime, A: ArgSettings<R>> {
+    // TODO: check whether I need to specify a lifetime here as well
+    // This would make sense given that an argument handle needs to live as long as the object in
+    // the struct does.
+    // TODO: check as_arg from TensorHandle
+    // needed: line_size
+    // needed: runtime or client
+    fn as_arg(&self, line_size: LineSize, client: &ComputeClient<R>) -> A;
+}
+
+/// Defines the argument settings used to launch a kernel.
+pub trait ArgSettings<R: Runtime>: Send + Sync {
+    /// Register the information of an argument to the [`KernelLauncher`].
+    fn register(&self, launcher: &mut KernelLauncher<R>);
+}
+
 macro_rules! launch_tuple {
     ($(($T:ident, $t:ident)),*) => {
         impl<$($T: LaunchArg),*> LaunchArg for ($($T),*) {
@@ -249,18 +271,6 @@ macro_rules! launch_tuple {
 }
 
 all_tuples!(launch_tuple, 2, 12, T, t);
-
-/// Defines that a struct annotated with `#[derive(CubeLaunch)]` can be transformed into its Launch Argument
-/// equivalent.
-pub trait AsLaunchArgument<R: Runtime, A: ArgSettings<R>> {
-    fn as_launch_arg(&self) -> A;
-}
-
-/// Defines the argument settings used to launch a kernel.
-pub trait ArgSettings<R: Runtime>: Send + Sync {
-    /// Register the information of an argument to the [`KernelLauncher`].
-    fn register(&self, launcher: &mut KernelLauncher<R>);
-}
 
 /// Expand type associated with a type.
 #[derive(new)]
@@ -614,4 +624,3 @@ macro_rules! define_size {
             }
         }
     };
-}
